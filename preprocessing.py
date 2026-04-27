@@ -1,4 +1,5 @@
 import mne
+import utils.icaUtils as iu
 from mne_icalabel import label_components
 
 import os
@@ -7,11 +8,15 @@ def process_file(data_path: str,
                  l_freq=0.5, 
                  h_freq=40.0,
                  notch_freq=50.0, 
-                 n_components=25, 
+                 n_components=0.95, 
                  epoch_duration=10.0, 
                  min_confidence=0.70,
-                 debug=False):
-     # ---------------------------------------------------------
+                 debug=False,
+                 mneDebug="warning"):
+    mne.set_config('MNE_USE_CUDA', 'true')
+    mne.cuda.init_cuda()
+
+    # ---------------------------------------------------------
     # 1. Load the BrainVision Data
     # ---------------------------------------------------------
     # MNE only needs the path to the .vhdr file. 
@@ -19,8 +24,7 @@ def process_file(data_path: str,
 
     if debug:
         print("Loading data...")
-    
-    raw = mne.io.read_raw_brainvision(vhdr_fname=data_path, preload=True)
+    raw = mne.io.read_raw_brainvision(vhdr_fname=data_path, preload=True, verbose=mneDebug)
 
     # (Optional but recommended) Set a standard montage so MNE knows where the electrodes are
     # raw.set_montage('standard_1020')
@@ -31,10 +35,10 @@ def process_file(data_path: str,
     if debug:
         print("Applying filters...")
     # Apply a bandpass filter (combines 0.5 Hz high-pass and 40 Hz low-pass)
-    raw.filter(l_freq=l_freq, h_freq=h_freq)
+    raw.filter(l_freq=l_freq, h_freq=h_freq, verbose=mneDebug)
 
     # Apply a Notch filter at 50 Hz to remove European power line noise
-    raw.notch_filter(freqs=notch_freq)
+    raw.notch_filter(freqs=notch_freq, verbose=mneDebug)
     
     # ---------------------------------------------------------
     # NEW: Common Average Reference (CAR)
@@ -43,8 +47,8 @@ def process_file(data_path: str,
         print("Applying Common Average Reference...")
     # 'average' sets the reference to the mean of all EEG channels
     # projection=True computes it as a spatial projection (standard MNE practice)
-    raw.set_eeg_reference('average', projection=True)
-    raw.apply_proj() # Apply the projection immediately
+    raw.set_eeg_reference('average', projection=True, verbose=mneDebug)
+    raw.apply_proj(verbose=mneDebug) # Apply the projection immediately
 
     # ---------------------------------------------------------
     # 3. Independent Component Analysis (ICA)
@@ -52,12 +56,18 @@ def process_file(data_path: str,
     if debug:
         print("Fitting ICA...")
     # Initialize ICA. 15 components is a safe default, adjust based on your channel count.
-    ica = mne.preprocessing.ICA(method="picard", fit_params=dict(ortho=False, extended=True), n_components=n_components, random_state=42, max_iter='auto', verbose="debug")
-    ica.fit(raw)
+    transformer = iu.get_mne_transformer(
+        method="picard", 
+        fit_params=dict(ortho=False, extended=True),
+        n_components=n_components, 
+        random_state=42, 
+        max_iter='auto'
+    )
+    transformer.fit(raw, verbose=mneDebug)
 
     print("Running ICLabel to detect artifacts...")
     # Pass the raw data and the fitted ICA object to the machine learning model
-    ic_labels = label_components(raw, ica, method='iclabel')
+    ic_labels = label_components(raw, transformer, method='iclabel')
 
     # Extract the predicted labels and their confidence scores
     labels = ic_labels['labels']
@@ -74,11 +84,11 @@ def process_file(data_path: str,
             bad_components.append(idx)
 
     # Assign the bad components to the ICA's exclude list
-    ica.exclude = bad_components.copy()
+    transformer.exclude = bad_components.copy()
 
     # Apply the ICA spatial weights back to the raw data
     raw_ica = raw.copy()
-    ica.apply(raw_ica)
+    transformer.apply(raw_ica, verbose=mneDebug)
 
     # ---------------------------------------------------------
     # 4 & 5. Epoching (10 seconds) and Detrending
@@ -99,7 +109,8 @@ def process_file(data_path: str,
         tmax=epoch_duration,
         baseline=None,
         detrend=1, 
-        preload=True
+        preload=True,
+        verbose=mneDebug
     )
 
     if debug:
