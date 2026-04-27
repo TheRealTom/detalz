@@ -8,6 +8,5 @@ def get_amica_transformer(raw: any, n_components: int):
 
 def get_mne_transformer(**kwargs):
     n_components = mne.preprocessing.PCA()
-    # Initialize ICA. 15 components is a safe default, adjust based on your channel count.
     ica = mne.preprocessing.ICA(**kwargs)
     return ica
