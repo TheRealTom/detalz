@@ -81,11 +81,11 @@ def process_file(
         return
 
     # MNE optimization for CUDA
-    try:
-        mne.set_config('MNE_USE_CUDA', 'true')
-        mne.cuda.init_cuda()
-    except (RuntimeError, ImportError):
-        pass  # Fallback to CPU
+    # try:
+    #     mne.set_config('MNE_USE_CUDA', 'true')
+    #     mne.cuda.init_cuda()
+    # except (RuntimeError, ImportError):
+    #     pass  # Fallback to CPU
 
     # ---------------------------------------------------------
     # 1. Load data
@@ -171,3 +171,4 @@ def process_file(
         
     # Save to disk
     epochs.save(save_path, overwrite=overwrite, verbose=mne_debug)
+    return "Success"
