@@ -1,5 +1,5 @@
 # Set the path to the dataset folder (relative to where the script is run)
-$rootPath = "..\..\PhD\datasets"
+$rootPath = "."
 
 # Verify the dataset folder exists before running
 if (-Not (Test-Path -Path $rootPath)) {
@@ -9,7 +9,7 @@ if (-Not (Test-Path -Path $rootPath)) {
 
 # Get all .vmrk|vhdr files in the subfolders of 'dataset'
 # This matches your dataset/[user_folder]/[filename].vmrk|vhdr structure
-$sourceFiles = Get-ChildItem -Path $rootPath -Filter *.vhdr -Recurse
+$sourceFiles = Get-ChildItem -Path $rootPath -Filter *.vmrk -Recurse
 
 foreach ($file in $sourceFiles) {
     Write-Host "Processing: $($file.FullName)" -ForegroundColor Cyan
