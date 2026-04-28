@@ -18,7 +18,10 @@ CSV_LOG_FILE = Path(os.getenv("CSV_LOG_FILE", "preprocessing_time_log.csv"))
 EXECUTION_LOG_FILE = Path(os.getenv("EXECUTION_LOG_FILE", "preprocessing_output.log"))
 
 # Max workers
-MAX_WORKERS = int(os.getenv("MAX_WORKERS", 1))
+MAX_WORKERS=int(os.getenv("MAX_WORKERS", 1))
+
+# Data files regex
+DATAFILES_REGEX=os.getenv("DATAFILES_REGEX", "./*.vhdr")
 
 # --- Logging Configuration ---
 # This configures all logger instances to write to BOTH the console and a text file
@@ -61,7 +64,7 @@ def worker_task(filepath: Path) -> Tuple[str, float, str]:
     execution_time = time.perf_counter() - start_time
     return subject_id, execution_time, status
 
-def run_parallel_pipeline(search_pattern: str = "sub-EXCI*/sub-EXCI*_ses-1_task-rest_eeg.vhdr"):
+def run_parallel_pipeline(search_pattern: str = DATAFILES_REGEX):
     """
     Main control function for parallel processing of the dataset.
     """
