@@ -140,11 +140,11 @@ if __name__ == "__main__":
             print(f"Analyzing {subject_id}...")
             
             try:
-                raw = mne.io.read_raw_brainvision(vhdr_fname=filepath)
+                raw = mne.io.read_raw_brainvision(vhdr_fname=filepath, verbose="error")
                 # Extract all statistics
                 stats = get_comprehensive_comparison(raw, [], subject_id)
                 all_subjects_stats.append(stats)
-            
+                del raw
                 print(f"  -> [SUCCESS] Stats extracted.")
                 
             except Exception as e:
