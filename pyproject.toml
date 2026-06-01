@@ -1,9 +1,13 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
 [project]
 name = "eeg-preprocessing-pipeline"
 version = "0.1.0"
 description = "Parallel preprocessing EEG"
 readme = "README.md"
-requires-python = ">=3.13"
+requires-python = ">=3.10"
 dependencies = [
     "mne>=1.6.0",
     "mne-icalabel>=0.4.0",
@@ -16,11 +20,7 @@ dependencies = [
     "pyamica[mne]>=0.3.0",
 ]
 
-
-[tool.poe.tasks]
-seq-preprocess = "python sequentialPreprocessing.py"
-
-[dependency-groups]
-dev = [
-    "poethepoet>=0.46.0",
+[project.optional-dependencies]
+gpu = [
+    "cupy-cuda12x"
 ]
