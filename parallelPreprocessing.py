@@ -93,9 +93,9 @@ def run_parallel_pipeline(search_pattern: str = DATAFILES_REGEX):
                 # Console and text file output via logger
                 log_msg = f"Completed: {sub_id} | Time: {duration:.2f}s | Status: {status}"
                 if status == "Success":
-                    logger.info(f"✅ {log_msg}")
+                    logger.info(f"{log_msg}")
                 else:
-                    logger.error(f"❌ {log_msg}")
+                    logger.error(f"{log_msg}")
                 
                 # Continuous CSV writing for time tracking
                 csv_log.write(f"{sub_id},{duration:.6f},{status}\n")
@@ -104,7 +104,7 @@ def run_parallel_pipeline(search_pattern: str = DATAFILES_REGEX):
         total_duration = time.perf_counter() - total_start_time
         csv_log.write(f"TOTAL_PIPELINE,{total_duration:.6f},Finished\n")
         
-    logger.info(f"🎉 Processing complete. Total time: {total_duration:.2f} seconds.")
+    logger.info(f"Processing complete. Total time: {total_duration:.2f} seconds.")
 
 if __name__ == "__main__":
     run_parallel_pipeline()

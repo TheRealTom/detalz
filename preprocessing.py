@@ -81,11 +81,11 @@ def process_file(
         return
 
     # MNE optimization for CUDA
-    # try:
-    #     mne.set_config('MNE_USE_CUDA', 'true')
-    #     mne.cuda.init_cuda()
-    # except (RuntimeError, ImportError):
-    #     pass  # Fallback to CPU
+    try:
+        mne.set_config('MNE_USE_CUDA', 'true')
+        mne.cuda.init_cuda()
+    except (RuntimeError, ImportError):
+        pass  # Fallback to CPU
 
     # ---------------------------------------------------------
     # 1. Load data
@@ -98,37 +98,46 @@ def process_file(
     # ---------------------------------------------------------
     # 2. Filtration and CAR
     # ---------------------------------------------------------
-    if debug:
-        print("[FILTER] Aplikuji Bandpass a Notch filtry...")
-    
-    raw.filter(l_freq=l_freq, h_freq=h_freq, verbose=mne_debug)
-    raw.notch_filter(freqs=notch_freq, verbose=mne_debug)
-    
+    apply_FIR_filters(l_freq, h_freq, notch_freq, debug, mne_debug, raw)
+    apply_common_average_reference(debug, mne_debug, raw)
+
+    # ---------------------------------------------------------
+    # 3. ICA and artefact detection (ICLabel)
+    # ---------------------------------------------------------
+    native_ica = get_ica(debug, raw)
+
+    remove_bad_ica_components(min_confidence, debug, mne_debug, raw, native_ica)
+
+    # ---------------------------------------------------------
+    # 4. Epoching and Detrending
+    # ---------------------------------------------------------
+    #epochs = make_epochs(epoch_duration, debug, mne_debug, raw)
+
+    # ---------------------------------------------------------
+    # 5. Save to disk
+    # ---------------------------------------------------------
+    return save_mne_data(overwrite, debug, mne_debug, save_path, raw)
+
+def apply_common_average_reference(debug, mne_debug, raw):
     if debug:
         print("[CAR] Aplikuji Common Average Reference...")
     
     raw.set_eeg_reference('average', projection=True, verbose=mne_debug)
     raw.apply_proj(verbose=mne_debug)
 
-    # ---------------------------------------------------------
-    # 3. ICA and artefact detection (ICLabel)
-    # ---------------------------------------------------------
+def apply_FIR_filters(l_freq, h_freq, notch_freq, debug, mne_debug, raw):
     if debug:
-        print("[ICA] Fituji ICA model...")
+        print("[FILTER] Aplikuji Highpass, Notch a Lowpass filtry...")
     
-    transformer = iu.get_mne_transformer(
-        method="picard", 
-        fit_params=dict(ortho=False, extended=True),
-        n_components=n_components, 
-        random_state=42, 
-        max_iter='auto'
-    )
-    transformer.fit(raw, verbose=mne_debug)
+    raw.filter(l_freq=None, h_freq=h_freq, verbose=mne_debug)
+    raw.notch_filter(freqs=notch_freq, verbose=mne_debug)
+    raw.filter(l_freq=l_freq, h_freq=None, verbose=mne_debug)
 
+def remove_bad_ica_components(min_confidence, debug, mne_debug, raw, native_ica):
     if debug:
         print("[ICLabel] Analyzuji komponenty...")
         
-    ic_labels = label_components(raw, transformer, method='iclabel')
+    ic_labels = label_components(raw, native_ica, method='iclabel')
     labels = ic_labels['labels']
     probabilities = ic_labels['y_pred_proba']
 
@@ -141,12 +150,20 @@ def process_file(
                 print(f"  -> Flagged Component {idx}: '{label}' ({prob*100:.1f}%)")
             bad_components.append(idx)
 
-    transformer.exclude = bad_components
-    transformer.apply(raw, verbose=mne_debug)
+    native_ica.exclude = bad_components
+    native_ica.apply(raw, verbose=mne_debug)
+    
+def get_ica(debug, raw):
+    if debug:
+        print("[ICA] Fitruji ICA model...")
 
-    # ---------------------------------------------------------
-    # 4. Epoching and Detrending
-    # ---------------------------------------------------------
+    transformer = iu.get_amica_transformer()
+    transformer.fit(raw)
+
+    native_ica = transformer.get_mne_ica()
+    return native_ica
+
+def make_epochs(epoch_duration, debug, mne_debug, raw):
     if debug:
         print(f"[EPOCHS] Krájím signál po {epoch_duration}s...")
         
@@ -162,13 +179,13 @@ def process_file(
         preload=True,
         verbose=mne_debug
     )
+    
+    return epochs
 
-    # ---------------------------------------------------------
-    # 5. Save to disk
-    # ---------------------------------------------------------
+def save_mne_data(overwrite, debug, mne_debug, save_path, data):
     if debug:
         print(f"[SAVE] Zapisuji na disk: {save_path}")
         
     # Save to disk
-    epochs.save(save_path, overwrite=overwrite, verbose=mne_debug)
+    data.save(save_path, overwrite=overwrite, verbose=mne_debug)
     return "Success"
