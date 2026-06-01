@@ -1,58 +1,63 @@
 #!/bin/bash
-
-# ------------------------------------------------------------------------------
-# PBS DIRECTIVES
-# ------------------------------------------------------------------------------
-# Name of the job
-#PBS -N EEG_MNE_Preproc
-#PBS -l select=1:ncpus=16:mem=48gb:scratch_local=10gb
-#PBS -l walltime=01:00:00
-
-# Join standard output and standard error into a single log file
+#PBS -N eeg_amica_gpu_100GB
+#PBS -q gpu
+#PBS -l select=1:ncpus=4:mem=64gb:ngpus=1:scratch_local=300gb
+#PBS -l walltime=24:00:00
 #PBS -j oe
 
-# ------------------------------------------------------------------------------
-# SCRIPT EXECUTION
-# ------------------------------------------------------------------------------
+# Nastavení prostředí
+module add python/3.11.11
+module add cuda/12.6.2
 
-# 1. Setup trap to clean the scratch directory when the job finishes or fails
-trap 'clean_scratch' TERM EXIT
+# Definice síťových cest (trvalé úložiště)
+NETWORK_DATA_DIR="/storage/brno2/home/$USER/eeg_project/data"
+NETWORK_OUTPUT_DIR="/storage/brno2/home/$USER/eeg_project/output"
 
-# Check if SCRATCHDIR is allocated
-if [ -z "$SCRATCHDIR" ] ; then
-    echo "Error: SCRATCHDIR is not set!"
+# Kontrola, zda nám byl přidělen SCRATCHDIR
+if [ -z "$SCRATCHDIR" ] || [ ! -d "$SCRATCHDIR" ]; then
+    echo "Kritická chyba: SCRATCHDIR nebyl alokován." >&2
     exit 1
 fi
 
-# 2. Load necessary modules
-# Load a Python module (check `module avail python` on frontend for latest versions)
-module add python/3.10.4-gcc-11.2.0-b5kma2x
+# ---------------------------------------------------------
+# KROK A: Příprava a kopírování dat na lokální NVMe výpočetního uzlu
+# ---------------------------------------------------------
+echo "Kopíruji 100GB dataset do lokálního scratch: $SCRATCHDIR"
+# Kopírujeme data a zachováváme strukturu složek
+cp -r $NETWORK_DATA_DIR/* $SCRATCHDIR/
 
-# 3. Navigate to the directory where you submitted the job
+# Vytvoření lokální výstupní složky
+LOCAL_OUTPUT_DIR="$SCRATCHDIR/output"
+mkdir -p $LOCAL_OUTPUT_DIR
+
+# ---------------------------------------------------------
+# KROK B: Aktivace Python prostředí a běh výpočtu
+# ---------------------------------------------------------
 cd $PBS_O_WORKDIR
+python -m venv venv_gpu
+source venv_gpu/bin/activate
+pip install --upgrade pip
+pip install mne mne-icalabel pydantic python-dotenv cupy-cuda12x
 
-# 4. Activate your Python virtual environment where MNE is installed
-# (Replace 'mne_env' with the path to your actual virtual environment)
-source mne_env/bin/activate
+# Nastavení proměnných prostředí pro Python skript tak, 
+# aby pracoval POUZE s lokálními cestami na uzlu
+export DATASET_DIR=$SCRATCHDIR
+export OUTPUT_DIR=$LOCAL_OUTPUT_DIR
+export LOG_FILE=$LOCAL_OUTPUT_DIR/processing_log.txt
 
-# 5. Copy your Python script and EEG data to the fast local scratch directory
-echo "Copying files to scratch..."
-cp preprocess_pipeline.py $SCRATCHDIR/
-cp -r raw_eeg_data/ $SCRATCHDIR/
+export OMP_NUM_THREADS=1
+export MKL_NUM_THREADS=1
 
-# 6. Move to the scratch directory to run the processing
-cd $SCRATCHDIR
+echo "Spouštím paralelní preprocessing na GPU..."
+python parallelPreprocessing.py
 
-# 7. Run the Python MNE script
-# (Tip: MNE can utilize multiple cores. If your script supports it, 
-# you can use the $PBS_NUM_PPN variable to set n_jobs dynamically)
-echo "Starting MNE preprocessing..."
-python preprocess_pipeline.py 
+# ---------------------------------------------------------
+# KROK C: Úklid a přesun výsledků zpět na síťový disk
+# ---------------------------------------------------------
+echo "Zpracování dokončeno, kopíruji výsledky zpět na domovský svazek..."
+# Přesuneme vytvořená data a logy zpět, pokud se skript nezhroutil
+cp -r $LOCAL_OUTPUT_DIR/* $NETWORK_OUTPUT_DIR/
 
-# 8. Copy the processed results back to your home/storage directory
-echo "Copying results back..."
-# Ensure the destination folder exists
-mkdir -p $PBS_O_WORKDIR/processed_results
-cp -r output_data/* $PBS_O_WORKDIR/processed_results/
-
-echo "Job finished successfully."
+# Smazání scratch adresáře z důvodu šetření místa pro další uživatele (dobrý mrav)
+rm -rf $SCRATCHDIR/*
+echo "Job kompletně hotov."
