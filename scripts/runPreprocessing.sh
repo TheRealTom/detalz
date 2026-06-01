@@ -6,26 +6,24 @@
 #PBS -j oe
 
 # Nastavení prostředí
-module add python/3.11.11
-module add cuda/12.6.2
+module load python/3.11.11
 
-# Definice síťových cest (trvalé úložiště)
-NETWORK_DATA_DIR="/storage/brno2/home/$USER/eeg_project/data"
-NETWORK_OUTPUT_DIR="/storage/brno2/home/$USER/eeg_project/output"
+cp -r ${PBS_O_WORKDIR} ${SCRATCHDIR}
 
-# Kontrola, zda nám byl přidělen SCRATCHDIR
-if [ -z "$SCRATCHDIR" ] || [ ! -d "$SCRATCHDIR" ]; then
-    echo "Kritická chyba: SCRATCHDIR nebyl alokován." >&2
-    exit 1
-fi
+cd ..
+mkdir ${SCRATCHDIR}/data
+mkdir ${SCRATCHDIR}/output
 
-# ---------------------------------------------------------
-# KROK A: Příprava a kopírování dat na lokální NVMe výpočetního uzlu
-# ---------------------------------------------------------
-echo "Kopíruji 100GB dataset do lokálního scratch: $SCRATCHDIR"
-# Kopírujeme data a zachováváme strukturu složek
-cp -r $NETWORK_DATA_DIR/* $SCRATCHDIR/
+cp -r ./data/sub-EXCI0103/ ${SCRATCHDIR}/data/
 
+cd ${SCRATCHDIR}
+cd repo
+python -m venv venv_eeg
+source ./venv_eeg/bin/activate
+
+export TMPDIR=$SCRATCHDIR
+
+pip install .
 # Vytvoření lokální výstupní složky
 LOCAL_OUTPUT_DIR="$SCRATCHDIR/output"
 mkdir -p $LOCAL_OUTPUT_DIR
@@ -33,20 +31,14 @@ mkdir -p $LOCAL_OUTPUT_DIR
 # ---------------------------------------------------------
 # KROK B: Aktivace Python prostředí a běh výpočtu
 # ---------------------------------------------------------
-cd $PBS_O_WORKDIR
-python -m venv venv_gpu
-source venv_gpu/bin/activate
-pip install --upgrade pip
-pip install mne mne-icalabel pydantic python-dotenv cupy-cuda12x
-
 # Nastavení proměnných prostředí pro Python skript tak, 
 # aby pracoval POUZE s lokálními cestami na uzlu
 export DATASET_DIR=$SCRATCHDIR
 export OUTPUT_DIR=$LOCAL_OUTPUT_DIR
 export LOG_FILE=$LOCAL_OUTPUT_DIR/processing_log.txt
 
-export OMP_NUM_THREADS=1
-export MKL_NUM_THREADS=1
+export OMP_NUM_THREADS=64
+export MKL_NUM_THREADS=64
 
 echo "Spouštím paralelní preprocessing na GPU..."
 python parallelPreprocessing.py
@@ -56,8 +48,10 @@ python parallelPreprocessing.py
 # ---------------------------------------------------------
 echo "Zpracování dokončeno, kopíruji výsledky zpět na domovský svazek..."
 # Přesuneme vytvořená data a logy zpět, pokud se skript nezhroutil
-cp -r $LOCAL_OUTPUT_DIR/* $NETWORK_OUTPUT_DIR/
+mkdir ${PBS_O_WORKDIR}/output
+cp -r $LOCAL_OUTPUT_DIR/* ${PBS_O_WORKDIR}/output
 
 # Smazání scratch adresáře z důvodu šetření místa pro další uživatele (dobrý mrav)
+clean_scratch
 rm -rf $SCRATCHDIR/*
 echo "Job kompletně hotov."
