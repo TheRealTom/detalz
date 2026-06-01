@@ -33,7 +33,7 @@ def run_pipeline() -> None:
             start_time = time.perf_counter()
             
             # Volání preprocessingu
-            success = process_file(str(filepath), debug=False)
+            success = process_file(str(filepath), debug=True)
             status = "Success" if success else "Error"
             
             end_time = time.perf_counter()

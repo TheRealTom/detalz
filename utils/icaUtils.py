@@ -1,9 +1,10 @@
 import mne
 
-from amica_python import fit_ica
+from pyamica import AmicaICA
 
-def get_amica_transformer(raw: any):
-    ica = fit_ica(raw, max_iter=10)
+def get_amica_transformer(device="cuda"):
+    ica = AmicaICA(n_components=None, max_iter=2000,
+                    device=device, n_models=1)
     return ica
 
 def get_mne_transformer(**kwargs):
